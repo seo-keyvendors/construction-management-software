@@ -276,8 +276,10 @@ export function isHolidayFor(date: string, holidays: OrgHoliday[], isOffice: boo
  *   Sunday an even number of weeks from it (either direction) is off, the
  *   other Sundays are working days.
  * - "flexible": no fixed off day — the employee chooses one day per
- *   Monday–Sunday week (`flexOffs`, 0055). Only a chosen day is a weekly
- *   off: missed days are never turned into weekly offs (they stay Absent).
+ *   Monday–Sunday week (`flexOffs`, 0055), at most as many in a month as the
+ *   month has Sundays. Only a chosen day is a weekly off: missed days are
+ *   never turned into weekly offs (they stay Absent), and unused offs don't
+ *   carry forward.
  */
 export type WeekOffKind = "fixed" | "alternate_sunday" | "flexible";
 export const WEEK_OFF_KINDS: WeekOffKind[] = ["fixed", "alternate_sunday", "flexible"];
@@ -371,13 +373,27 @@ export function isWeeklyOff(date: string, rule: WeekOffRule = SUNDAY_OFF): boole
   return isOffUnderPattern(date, weekOffPatternOn(rule, date)) && !rule.swaps.some((s) => s.workedDate === date);
 }
 
+/** Sundays in `month` ("YYYY-MM") — the most weekly offs a Flexible member can have that month. */
+export function sundaysInMonth(month: string): number {
+  return daysOfMonth(month).filter((d) => dowOf(d) === 0).length;
+}
+
 /**
  * Every weekly-off date in `month` for one member (isWeeklyOff per day:
  * fixed / alternate days, swaps, and Flexible days the employee chose).
- * Days before `startDate` are never weekly offs (they're Not Joined).
+ * Days before `startDate` are never weekly offs (they're Not Joined). Chosen
+ * Flexible days past the month's limit (sundaysInMonth, counting any earlier
+ * offs that month) don't count, so pay can never exceed it.
  */
 export function weekOffDatesForMonth(month: string, rule: WeekOffRule, startDate?: string): Set<string> {
-  return new Set(daysOfMonth(month).filter((d) => (!startDate || d >= startDate) && isWeeklyOff(d, rule)));
+  const limit = sundaysInMonth(month);
+  const out = new Set<string>();
+  for (const d of daysOfMonth(month)) {
+    if ((startDate && d < startDate) || !isWeeklyOff(d, rule)) continue;
+    if (weekOffPatternOn(rule, d).kind === "flexible" && out.size >= limit) continue;
+    out.add(d);
+  }
+  return out;
 }
 
 /** Monday ("YYYY-MM-DD") of `date`'s Monday–Sunday week. */
@@ -396,7 +412,8 @@ export function addDaysIso(date: string, n: number): string {
  * Why `date` can't be a Flexible weekly off for this rule, or null. One
  * weekly off per Monday–Sunday week: any other off day that week (another
  * chosen day, or a fixed/swap off from before a switch to Flexible) blocks
- * it — except `replacing`, the chosen day being moved.
+ * it — except `replacing`, the chosen day being moved. And no more in a
+ * month than it has Sundays.
  */
 export function flexWeekOffProblem(
   rule: WeekOffRule,
@@ -413,6 +430,13 @@ export function flexWeekOffProblem(
     const d = addDaysIso(week, i);
     if (d === date || d === replacing) continue;
     if (isWeeklyOff(d, rule)) return `There's already a weekly off this week (${d}). Only one per week (Mon–Sun).`;
+  }
+  const month = date.slice(0, 7);
+  const limit = sundaysInMonth(month);
+  const used = daysOfMonth(month).filter((d) => d !== date && d !== replacing && isWeeklyOff(d, rule)).length;
+  if (used >= limit) {
+    const label = new Date(`${month}-01T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    return `${label} allows only ${limit} weekly offs (one for each Sunday), and all ${limit} are used.`;
   }
   return null;
 }

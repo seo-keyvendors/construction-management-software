@@ -12,6 +12,7 @@ import {
   flexWeekOffProblem,
   mondayOf,
   orgToday,
+  sundaysInMonth,
   weekOffPatternOn,
   type OrgHoliday,
   type WeekOffRule,
@@ -76,7 +77,7 @@ export function FlexWeekOffDialog({
       open
       onClose={onClose}
       title="Choose weekly off"
-      description="One weekly off per week (Monday to Sunday). Days missed without a chosen weekly off count as Absent."
+      description="One weekly off per week (Monday to Sunday), and no more in a month than it has Sundays. Unused offs don't carry forward; other missed days count as Absent."
       className="max-w-sm"
     >
       <form onSubmit={submit} className="space-y-4">
@@ -133,6 +134,8 @@ export function MyFlexWeekOffCard({
   const [error, setError] = React.useState<string | null>(null);
   if (weeks.length === 0) return null;
   const lastDay = addDaysIso(thisWeek, 13);
+  const month = today.slice(0, 7);
+  const usedThisMonth = (rule.flexOffs ?? []).filter((d) => d.startsWith(month)).length;
 
   async function remove(date: string) {
     setBusy(true);
@@ -148,6 +151,9 @@ export function MyFlexWeekOffCard({
       <CardContent className="space-y-3 py-5">
         <p className="flex items-center gap-1.5 text-sm font-medium">
           <CalendarCheck className="h-4 w-4 text-muted-foreground" /> My weekly off
+          <span className="ml-auto text-xs font-normal tabular-nums text-muted-foreground">
+            {usedThisMonth} of {sundaysInMonth(month)} used this month
+          </span>
         </p>
         <ul className="divide-y divide-border rounded-lg border border-border">
           {weeks.map((w) => {

@@ -779,7 +779,7 @@ export function TeamBoard({
                               )}
                               {showSiteKinds("flexible") && (
                                 <option value="flexible" disabled={weekOffKindsPending} title={weekOffKindsPending ? kindsTip : undefined}>
-                                  Flexible (choose 1 day per week)
+                                  Flexible (1 chosen day a week, max = Sundays in month)
                                 </option>
                               )}
                               <option value="other">Fixed other day</option>
