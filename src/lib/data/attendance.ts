@@ -7,6 +7,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthContext } from "@/lib/auth/context";
 import { isExternalRole } from "@/lib/auth/roles";
 import {
+  addDaysIso,
+  flexWeekOffProblem,
+  mondayOf,
+  weekOffPatternOn,
   isEarlyCheckoutExemptDay,
   orgDateOf,
   orgThisMonth,
@@ -232,6 +236,56 @@ export async function earlyCheckoutExemptFor(
     appliesTo: (h as { applies_to: "all" | "office" }).applies_to,
   }));
   return isEarlyCheckoutExemptDay(date, rule, holidays, isOffice);
+}
+
+export interface FlexWeekOffPrompt {
+  /** Monday of the current week. */
+  weekStart: string;
+  /** Mon–Sun of this week; `reason` says why a day can't be chosen (null = can). */
+  days: { date: string; reason: string | null }[];
+}
+
+/**
+ * The weekly "choose your weekly off" popup for the signed-in employee, or
+ * null when it shouldn't show: not on Flexible today, already chose a day
+ * this week, or no day left they could choose (past, at work, holiday, the
+ * month's limit used). Shown again on every visit until they choose.
+ */
+export async function getMyFlexWeekOffPrompt(): Promise<FlexWeekOffPrompt | null> {
+  if (!isSupabaseConfigured()) return null;
+  const ctx = await getAuthContext();
+  if (!ctx?.orgId || isExternalRole(ctx.role)) return null;
+  const supabase = await createSupabase();
+  const today = orgToday();
+  const rule = await myWeekOff(supabase, ctx.userId);
+  if (weekOffPatternOn(rule, today).kind !== "flexible") return null;
+  const weekStart = mondayOf(today);
+  const weekEnd = addDaysIso(weekStart, 6);
+  if (rule.flexOffs?.some((d) => d >= weekStart && d <= weekEnd)) return null;
+
+  const [isOfficeRaw, holidaysRes, recordsRes] = await Promise.all([
+    myIsOffice(supabase, ctx.userId, ctx.orgId),
+    supabase.from("org_holidays").select("date, label, applies_to").eq("org_id", ctx.orgId),
+    supabase.from("employee_attendance").select("date").eq("user_id", ctx.userId).gte("date", weekStart).lte("date", weekEnd),
+  ]);
+  const isOffice = isOfficeRaw ?? false;
+  const holidays: OrgHoliday[] = (holidaysRes.data ?? []).map((h) => ({
+    date: (h as { date: string }).date,
+    label: (h as { label: string | null }).label ?? "Holiday",
+    appliesTo: (h as { applies_to: "all" | "office" }).applies_to,
+  }));
+  const worked = new Set(((recordsRes.data ?? []) as { date: string }[]).map((r) => r.date));
+  const days = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+    const date = addDaysIso(weekStart, i);
+    const reason =
+      date < today
+        ? "Already passed"
+        : worked.has(date)
+          ? "You have attendance this day"
+          : flexWeekOffProblem(rule, date, holidays, isOffice);
+    return { date, reason };
+  });
+  return days.some((d) => !d.reason) ? { weekStart, days } : null;
 }
 
 /**

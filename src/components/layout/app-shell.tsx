@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { RoleProvider } from "./role-provider";
+import { FlexWeekOffPrompt } from "@/components/attendance/flex-week-off";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -22,6 +23,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="flex-1 px-4 py-6 lg:px-8">{children}</main>
         </div>
       </div>
+      {/* Flexible weekly off: asks each week until a day is chosen (shows nothing for anyone else). */}
+      <FlexWeekOffPrompt />
     </RoleProvider>
   );
 }

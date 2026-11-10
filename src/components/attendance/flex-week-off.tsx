@@ -17,7 +17,11 @@ import {
   type OrgHoliday,
   type WeekOffRule,
 } from "@/lib/attendance/compute";
-import { removeFlexWeekOffAction, setFlexWeekOffAction } from "@/app/attendance/week-off-actions";
+import {
+  getFlexWeekOffPromptAction,
+  removeFlexWeekOffAction,
+  setFlexWeekOffAction,
+} from "@/app/attendance/week-off-actions";
 
 export const longDay = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
@@ -250,5 +254,82 @@ export function FlexWeekOffList({
       </ul>
       {error && <p className="px-3 pb-2 text-sm text-destructive">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * Weekly popup (mounted app-wide): asks a Flexible employee to choose this
+ * week's weekly off until they do. "Later" hides it for this visit only; it
+ * comes back on the next visit. Never shown once a day is chosen, to
+ * fixed / alternate staff, or when no day is left to choose.
+ */
+export function FlexWeekOffPrompt() {
+  const router = useRouter();
+  const [prompt, setPrompt] = React.useState<Awaited<ReturnType<typeof getFlexWeekOffPromptAction>>>(null);
+  const [selected, setSelected] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let ignore = false;
+    getFlexWeekOffPromptAction()
+      .then((p) => {
+        if (!ignore) setPrompt(p);
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  if (!prompt) return null;
+
+  async function save() {
+    if (!selected) return;
+    setSaving(true);
+    setError(null);
+    const res = await setFlexWeekOffAction({ date: selected });
+    setSaving(false);
+    if (res.error) return setError(res.error);
+    setPrompt(null);
+    router.refresh();
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={() => setPrompt(null)}
+      title="Choose this week's weekly off"
+      description={`Week of ${longDay(prompt.weekStart)} – ${longDay(addDaysIso(prompt.weekStart, 6))}. You get one weekly off this week. Missed days without a chosen weekly off count as Absent.`}
+      className="max-w-sm"
+    >
+      <div className="space-y-4">
+        <div className="grid gap-2">
+          {prompt.days.map((d) => (
+            <button
+              key={d.date}
+              type="button"
+              disabled={Boolean(d.reason)}
+              onClick={() => setSelected(d.date)}
+              className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                selected === d.date ? "border-primary bg-primary/5 font-medium" : "border-border hover:bg-secondary"
+              }`}
+            >
+              <span>{longDay(d.date)}</span>
+              {d.reason && <span className="text-xs text-muted-foreground">{d.reason}</span>}
+            </button>
+          ))}
+        </div>
+        {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={() => setPrompt(null)}>
+            Later
+          </Button>
+          <Button type="button" disabled={!selected || saving} onClick={save}>
+            {saving ? "Saving…" : "Save weekly off"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

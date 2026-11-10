@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { logActivity } from "@/lib/activity/log";
 import { isExternalRole } from "@/lib/auth/roles";
+import { getMyFlexWeekOffPrompt, type FlexWeekOffPrompt } from "@/lib/data/attendance";
 import {
   addDaysIso,
   flexWeekOffProblem,
@@ -322,4 +323,9 @@ export async function removeFlexWeekOffAction(input: { userId?: string; date: st
     meta: { userId, date: input.date },
   });
   return { id: data[0].id as string };
+}
+
+/** The signed-in employee's weekly-off popup (see getMyFlexWeekOffPrompt), or null. */
+export async function getFlexWeekOffPromptAction(): Promise<FlexWeekOffPrompt | null> {
+  return getMyFlexWeekOffPrompt();
 }
